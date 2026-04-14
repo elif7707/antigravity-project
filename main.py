@@ -1,154 +1,179 @@
+import uuid
 import os
-import json
-import datetime
-from dotenv import load_dotenv
-import google.generativeai as genai
+from datetime import datetime
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
-# Load environment variables from .env
-load_dotenv()
+app = FastAPI()
 
-# Configure Gemini AI
-GENIMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-genai.configure(api_key=GENIMINI_API_KEY)
+# Google Sheets Configuration
+SPREADSHEET_ID = "1G7pGNSOADTmnKq_wKP0ikwckzOkvt_-Rjfk2wYnAJUY"
+SERVICE_ACCOUNT_FILE = "credentials.json"
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+SHEET_NAME = "Sayfa1"
 
-def run_workflow(inputs):
-    print("🚀 Starting Antigravity Python Workflow Engine...")
+# 1. AI Analysis & Urgency Calculation
+def calculate_urgency(message: str) -> int:
+    """Calculates an urgency score from 1 (Low) to 5 (Critical) based on keywords."""
+    msg = message.lower()
     
-    # Load workflow.ag
-    try:
-        with open('workflow.ag', 'r', encoding='utf-8') as f:
-            workflow = json.load(f)
-    except Exception as e:
-        print(f"❌ Error loading workflow.ag: {e}")
-        return
+    # Keyword weights
+    critical = ["iade", "refund", "acil", "bozuk", "broken", "hata", "error", "error 500"]
+    high = ["sorun", "problem", "sikayet", "complaint", "calismiyor"]
+    medium = ["yardim", "help", "destek", "support", "nasil"]
+    low = ["tesekkur", "thanks", "bilgi", "nasilsiniz"]
+    
+    if any(k in msg for k in critical): return 5
+    if any(k in msg for k in high): return 4
+    if any(k in msg for k in medium): return 3
+    if any(k in msg for k in low): return 1
+    
+    return 3 # Default to Medium
 
-    context = inputs.copy()
+# Add CORS Middleware to allow requests from the UI
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    for node in workflow['nodes']:
-        print(f"\n📦 Executing Node: {node['name']} ({node['type']})")
-        
-        try:
-            if node['type'] == 'Webhook':
-                # Inputs already provided
-                pass
-
-            elif node['type'] == 'Function':
-                print("  > Running JS Transformation Simulation (Python equivalent)...")
-                # Since we are in Python, we simulate the JS logic or use a JS runner if needed.
-                # For this specific workflow: { ...inputs, order_id: inputs.order_id.trim(), timestamp: new Date().toISOString() }
-                context['order_id'] = context['order_id'].strip()
-                context['timestamp'] = datetime.datetime.now().isoformat()
-                print(f"  > Output Data: {json.dumps(context, indent=2)}")
-
-            elif node['type'] == 'AI Completion':
-                print("  > Calling Gemini AI (gemini-2.0-flash)...")
-                model = genai.GenerativeModel('gemini-2.0-flash')
-                
-                prompt = f"""
-                Task: {node['config']['task']}
-                Input: {json.dumps(context)}
-                Rules: {json.dumps(node['config']['rules'])}
-                
-                Respond ONLY with a JSON object containing the following keys: {', '.join(node['config']['outputs'])}.
-                Do not include markdown or explanations.
-                """
-                
-                try:
-                    response = model.generate_content(prompt)
-                    text = response.text.strip()
-                    print(f"  > AI Raw Output: {text}")
-                    
-                    # Extract JSON
-                    import re
-                    json_match = re.search(r'\{.*\}', text, re.DOTALL)
-                    if json_match:
-                        ai_data = json.loads(json_match.group())
-                        context.update(ai_data)
-                        print(f"  > AI Decoded: {json.dumps(ai_data)}")
-                    else:
-                        raise ValueError("No JSON found in AI response")
-                        
-                except Exception as ai_e:
-                    if "429" in str(ai_e):
-                        print("  > ⚠️ QUOTA EXCEEDED (429). Using internal fallback logic...")
-                        reason = context.get('return_reason', '').lower()
-                        if 'damage' in reason or 'broken' in reason:
-                            context['category'] = 'Shipping Damage'
-                            context['urgency'] = 'High'
-                        elif 'size' in reason or 'fit' in reason:
-                            context['category'] = 'Exchange'
-                            context['urgency'] = 'Medium'
-                        else:
-                            context['category'] = 'General Return'
-                            context['urgency'] = 'Low'
-                        print(f"  > Fallback Applied: {json.dumps({'category': context['category'], 'urgency': context['urgency']})}")
-                    else:
-                        raise ai_e
-
-            elif node['type'] == 'Google Sheets':
-                print("  > Exporting to Google Sheets...")
-                
-                # Check for credentials.json
-                creds_path = 'credentials.json'
-                if os.path.exists(creds_path):
-                    creds = service_account.Credentials.from_service_account_file(
-                        creds_path, scopes=['https://www.googleapis.com/auth/spreadsheets']
-                    )
-                    service = build('sheets', 'v4', credentials=creds)
-                    
-                    # Prepare row data based on mapping
-                    mapping = node['config']['mapping']
-                    row_values = []
-                    # Assuming a specific order or following mapping keys if needed.
-                    # For this workflow, the user wanted specific columns:
-                    # Timestamp, Customer Name, Email, Message, AI Category, Urgency Level
-                    
-                    ordered_columns = ["Timestamp", "Customer Name", "Email", "Message", "AI Category", "Urgency Level"]
-                    for col in ordered_columns:
-                        field = mapping.get(col)
-                        row_values.append(context.get(field, ""))
-
-                    spreadsheet_id = node['config']['spreadsheet_id']
-                    
-                    # Append row
-                    service.spreadsheets().values().append(
-                        spreadsheetId=spreadsheet_id,
-                        range='A1',
-                        valueInputOption='USER_ENTERED',
-                        body={'values': [row_values]}
-                    ).execute()
-                    
-                    print(f"  > ✅ SUCCESS: Row pushed to spreadsheet! ({json.dumps(row_values)})")
-                else:
-                    print("  > ⚠️ WARNING: credentials.json not found. Row NOT pushed (MOCKED).")
-
-        except Exception as node_e:
-            print(f"  > ❌ ERROR in node {node['name']}: {node_e}")
-            break
-
-    print("\n🏁 Python Workflow Execution Finished.")
-    return context
-
-if __name__ == "__main__":
-    import sys
-    # Example test cases
-    test_inputs = {
-        "order_id": " ORD-PY-100 ",
-        "customer_name": "Python Tester",
-        "email": "py@example.com",
-        "return_reason": "The item is broken and cracked."
+# 3. Processing Function
+def process_data(payload: dict) -> dict:
+    """Receives data and initializes properly."""
+    print("-> Status: Running Process Function...")
+    
+    # Extract values with safe fallbacks
+    customer_name = payload.get("customer", "Unknown Customer")
+    inquiry = payload.get("message", "No message provided")
+    
+    # Calculate Urgency
+    urgency = calculate_urgency(inquiry)
+    
+    # Initialize basic properties
+    # Validates whether the minimum required field (message) is provided
+    processed = {
+        "id": str(uuid.uuid4()),
+        "customer": customer_name,
+        "message": inquiry,
+        "urgency_level": urgency,
+        "processed_at": datetime.now().isoformat(),
+        "is_valid": bool(inquiry and inquiry != "No message provided")
     }
     
-    # Overwrite with CLI args if provided
-    if len(sys.argv) > 1:
-        test_inputs['order_id'] = sys.argv[1]
-    if len(sys.argv) > 2:
-        test_inputs['customer_name'] = sys.argv[2]
-    if len(sys.argv) > 3:
-        test_inputs['email'] = sys.argv[3]
-    if len(sys.argv) > 4:
-        test_inputs['return_reason'] = sys.argv[4]
+    print(f"   [Data Initialized] {processed}")
+    return processed
 
-    run_workflow(test_inputs)
+# 4. External API (Sheets/CRM)
+def send_to_crm(data: dict) -> bool:
+    """Saves data to a real Google Sheet."""
+    print("-> Status: Calling Google Sheets API...")
+    if not data.get("is_valid"):
+        print("   [Failed] Data is invalid, skipped Sheets.")
+        return False
+
+    try:
+        # Authentication
+        creds = service_account.Credentials.from_service_account_file(
+            SERVICE_ACCOUNT_FILE, scopes=SCOPES
+        )
+        service = build("sheets", "v4", credentials=creds)
+
+        # Prepare the row: [Timestamp, Name, Email(empty), Message, AI Category(empty), Urgency]
+        values = [[
+            data.get("processed_at"),
+            data.get("customer"),
+            "", # Email placeholder
+            data.get("message"),
+            "", # AI Category placeholder
+            data.get("urgency_level")
+        ]]
+        body = {"values": values}
+
+        # Append data to the sheet
+        result = service.spreadsheets().values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME}!A1",
+            valueInputOption="RAW",
+            body=body
+        ).execute()
+
+        print(f"   [Success] Appended row to '{SHEET_NAME}'. Sheets Updated: {result.get('updates').get('updatedCells')} cells. Urgency Score: {data.get('urgency_level')}")
+        return True
+
+    except Exception as e:
+        print(f"   [Error] Failed to write to Google Sheets: {e}")
+        return False
+
+# 5. AI Completion
+def get_ai_completion(data: dict) -> str:
+    """Mock AI Completion."""
+    print("-> Status: Calling AI Completion API...")
+    
+    if not data.get("is_valid"):
+        print("   [Failed] Cannot process invalid data with AI.")
+        return "Error: Invalid data."
+        
+    inquiry = data.get("message", "")
+    
+    # Simple simulated logic based on inquiry content
+    if "refund" in inquiry.lower():
+        response = "AI Response: I can help you process your refund. Please provide your order number."
+    elif "password" in inquiry.lower():
+        response = "AI Response: It looks like you need help resetting your password. I will email you a reset link."
+    else:
+        response = "AI Response: Thank you for reaching out. A human agent will review your inquiry shortly."
+        
+    print(f"   [AI Generated] {response}")
+    return response
+
+# 2. Trigger (Webhook)
+@app.post("/webhook")
+async def handle_trigger(request: Request):
+    """
+    Trigger point: 
+    Receives JSON payload, e.g. {"customer": "Alice", "message": "I need a refund"}
+    """
+    print("\n==================================")
+    print("-> Status: Trigger Fired! Received Webhook POST request.")
+    
+    # Get JSON payload from webhook
+    data = await request.json()
+    print(f"   [Payload] {data}")
+    
+    # Execute Pipeline Steps
+    processed_data = process_data(data)
+    crm_success = send_to_crm(processed_data)
+    ai_response = get_ai_completion(processed_data)
+    
+    print("-> Status: Pipeline Completed.")
+    print("==================================\n")
+    
+    # Return success payload mimicking a successful workflow run
+    return {
+        "status": "success",
+        "urgency_level": processed_data.get("urgency_level"),
+        "pipeline_results": {
+            "trigger_fired": True,
+            "data_processed": True,
+            "crm_written": crm_success,
+            "ai_completion": ai_response
+        }
+    }
+
+@app.get("/", response_class=HTMLResponse)
+async def get_index():
+    """Serves the UI frontend."""
+    with open("index.html", "r") as f:
+        return f.read()
+
+# Run directly if file is executed
+if __name__ == "__main__":
+    import uvicorn
+    print("Starting AI Customer Support Assignment Webhook Server on port 8000...")
+    uvicorn.run(app, host="127.0.0.1", port=8000)
+
