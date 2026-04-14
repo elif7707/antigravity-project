@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intelligent Return System | Antigravity</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --secondary: #a855f7;
+            --accent: #22d3ee;
+            --bg-dark: #0c0c0e;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(circle at top left, #1e1b4b, #0c0c0e 50%);
+            background-attachment: fixed;
+            color: white;
+            min-height: 100vh;
+        }
+        h1, h2, h3 { font-family: 'Outfit', sans-serif; }
+        .glass {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .animate-in {
+            animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .node-active {
+            border-color: var(--primary);
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
+            background: rgba(99, 102, 241, 0.1);
+        }
+        .node-complete {
+            border-color: var(--accent);
+            background: rgba(34, 211, 238, 0.05);
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const DEFAULT_WORKFLOW = {
+            "name": "Intelligent Return System",
+            "nodes": [
+                { "id": "node_1", "type": "Webhook", "name": "Trigger" },
+                { "id": "node_2", "type": "Function", "name": "Processing" },
+                { "id": "node_3", "type": "AI Completion", "name": "AI Integration" },
+                { "id": "node_4", "type": "Google Sheets", "name": "Export" }
+            ]
+        };
+
+        function App() {
+            const [orderId, setOrderId] = useState('ORD-67890');
+            const [customerName, setCustomerName] = useState('Jane Doe');
+            const [email, setEmail] = useState('jane.doe@example.com');
+            const [reason, setReason] = useState('My package arrived with a broken screen.');
+            const [logs, setLogs] = useState([]);
+            const [isExecuting, setIsExecuting] = useState(false);
+            const [currentNodeIdx, setCurrentNodeIdx] = useState(-1);
+
+            const runWorkflow = async () => {
+                setIsExecuting(true);
+                setLogs([]);
+                let currentData = { 
+                    order_id: orderId, 
+                    customer_name: customerName, 
+                    email: email, 
+                    return_reason: reason 
+                };
+                
+                for (let i = 0; i < DEFAULT_WORKFLOW.nodes.length; i++) {
+                    const node = DEFAULT_WORKFLOW.nodes[i];
+                    setCurrentNodeIdx(i);
+                    const logEntry = { nodeName: node.name, input: { ...currentData }, type: node.type };
+                    
+                    await new Promise(r => setTimeout(r, 800));
+
+                    if (node.type === 'Function') {
+                        currentData.order_id = currentData.order_id.trim();
+                        currentData.timestamp = new Date().toISOString();
+                        logEntry.output = { ...currentData };
+                    } else if (node.type === 'AI Completion') {
+                        const lowerReason = currentData.return_reason.toLowerCase();
+                        if (lowerReason.includes('damage') || lowerReason.includes('broken')) {
+                            currentData.category = 'Shipping Damage';
+                            currentData.urgency = 'High';
+                        } else if (lowerReason.includes('size') || lowerReason.includes('fit')) {
+                            currentData.category = 'Exchange';
+                            currentData.urgency = 'Medium';
+                        } else {
+                            currentData.category = 'General Return';
+                            currentData.urgency = 'Low';
+                        }
+                        logEntry.output = { ...currentData };
+                    } else if (node.type === 'Google Sheets') {
+                        logEntry.output = {
+                            success: true,
+                            spreadsheet_id: "1JQ-AYlhu2nNz...",
+                            mapped_data: {
+                                "Timestamp": currentData.timestamp,
+                                "Customer Name": currentData.customer_name,
+                                "Email": currentData.email,
+                                "Message": currentData.return_reason,
+                                "AI Category": currentData.category,
+                                "Urgency Level": currentData.urgency
+                            }
+                        };
+                    } else {
+                        logEntry.output = { ...currentData };
+                    }
+
+                    setLogs(prev => [...prev, logEntry]);
+                    if (i === DEFAULT_WORKFLOW.nodes.length -1) {
+                        setCurrentNodeIdx(-1);
+                    }
+                }
+                setIsExecuting(false);
+            };
+
+            return (
+                <div className="max-w-6xl mx-auto p-8 space-y-8">
+                    <header className="glass rounded-3xl p-8 flex justify-between items-center animate-in">
+                        <div>
+                            <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">
+                                Antigravity
+                            </h1>
+                            <p className="text-gray-400 mt-1">Intelligent Return System Dashboard</p>
+                        </div>
+                        <div className="px-4 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-indigo-400 text-sm font-semibold">
+                            v1.3.0 (Updated Mapping)
+                        </div>
+                    </header>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Simulation controls */}
+                        <div className="glass rounded-3xl p-8 space-y-6 animate-in" style={{animationDelay: '0.1s'}}>
+                            <h2 className="text-xl font-bold">Simulator</h2>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-xs uppercase tracking-widest text-gray-400 font-bold mb-2 block">Customer Name</label>
+                                    <input 
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl p-3 focus:outline-none focus:border-indigo-500 transition-colors"
+                                        value={customerName}
+                                        onChange={e => setCustomerName(e.target.value)}
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-xs uppercase tracking-widest text-gray-400 font-bold mb-2 block">Order ID</label>
+                                        <input 
+                                            className="w-full bg-black/40 border border-white/10 rounded-xl p-3 focus:outline-none focus:border-indigo-500 transition-colors"
+                                            value={orderId}
+                                            onChange={e => setOrderId(e.target.value)}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs uppercase tracking-widest text-gray-400 font-bold mb-2 block">Email</label>
+                                        <input 
+                                            className="w-full bg-black/40 border border-white/10 rounded-xl p-3 focus:outline-none focus:border-indigo-500 transition-colors"
+                                            value={email}
+                                            onChange={e => setEmail(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-xs uppercase tracking-widest text-gray-400 font-bold mb-2 block">Return Reason</label>
+                                    <textarea 
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl p-3 h-32 focus:outline-none focus:border-indigo-500 transition-colors"
+                                        value={reason}
+                                        onChange={e => setReason(e.target.value)}
+                                    />
+                                </div>
+                                <button 
+                                    onClick={runWorkflow}
+                                    disabled={isExecuting}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 p-4 rounded-xl font-bold transition-all transform hover:-translate-y-1 active:translate-y-0"
+                                >
+                                    {isExecuting ? 'Processing...' : 'Execute Workflow'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Workflow Visualization */}
+                        <div className="lg:col-span-2 space-y-8">
+                            <div className="flex justify-between items-center px-4">
+                                <h2 className="text-xl font-bold">Execution Flow</h2>
+                                <div className="flex gap-2">
+                                    <div className="flex items-center gap-1 text-xs text-gray-400">
+                                        <div className="w-2 h-2 rounded-full bg-indigo-500"></div> Active
+                                    </div>
+                                    <div className="flex items-center gap-1 text-xs text-gray-400">
+                                        <div className="w-2 h-2 rounded-full bg-cyan-500"></div> Complete
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-4 gap-4 relative animate-in" style={{animationDelay: '0.2s'}}>
+                                {DEFAULT_WORKFLOW.nodes.map((node, i) => (
+                                    <div key={node.id} className="relative">
+                                        <div className={`glass p-6 rounded-2xl text-center transition-all duration-500 ${currentNodeIdx === i ? 'node-active' : ''} ${logs[i] ? 'node-complete' : ''}`}>
+                                            <div className="text-[10px] uppercase text-gray-500 font-black mb-1">{node.type}</div>
+                                            <div className="font-bold text-sm tracking-tight">{node.name}</div>
+                                        </div>
+                                        {i < 3 && (
+                                            <div className="absolute top-1/2 -right-2 transform translate-x-full -translate-y-1/2 text-gray-600">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="9 5l7 7-7 7" />
+                                                </svg>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="glass rounded-3xl p-8 space-y-6 animate-in" style={{animationDelay: '0.3s'}}>
+                                <h2 className="text-xl font-bold">Execution Logs</h2>
+                                <div className="space-y-4 max-h-[400px] overflow-y-auto pr-4 custom-scrollbar">
+                                    {logs.length === 0 ? (
+                                        <div className="text-center py-20 text-gray-600 italic">No activity detected</div>
+                                    ) : (
+                                        logs.map((log, i) => (
+                                            <div key={i} className="border-l-2 border-indigo-500 pl-6 py-2 space-y-3 animate-in">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="font-bold text-indigo-400">{log.nodeName}</span>
+                                                    <span className="text-[10px] text-gray-500 uppercase">{log.type}</span>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="bg-black/40 rounded-xl p-3 text-xs">
+                                                        <div className="text-gray-500 font-bold mb-2">INPUT</div>
+                                                        <pre className="text-gray-300 font-mono">{JSON.stringify(log.input, null, 2)}</pre>
+                                                    </div>
+                                                    <div className="bg-black/40 rounded-xl p-3 text-xs">
+                                                        <div className="text-indigo-400 font-bold mb-2">OUTPUT</div>
+                                                        <pre className="text-indigo-200 font-mono">{JSON.stringify(log.output, null, 2)}</pre>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
