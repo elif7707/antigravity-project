@@ -244,6 +244,10 @@
                 <input type="text" id="customer" placeholder="e.g. Alice Smith" value="Test User">
             </div>
             <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" placeholder="e.g. alice@example.com" value="testuser@example.com">
+            </div>
+            <div class="form-group">
                 <label for="message">Customer Message</label>
                 <textarea id="message" rows="3" placeholder="I need help with my refund...">I want a refund for my order #12345.</textarea>
             </div>
@@ -299,6 +303,18 @@
                     <div class="ai-message" id="ai-message"></div>
                 </div>
             </div>
+
+            <!-- Step 5 -->
+            <div class="step" id="step-5">
+                <div class="step-icon">
+                    <span class="step-number">5</span>
+                    <svg class="checkmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </div>
+                <div class="step-content">
+                    <div class="step-title">Email Notification</div>
+                    <div class="step-desc" id="email-desc">Sending confirmation email...</div>
+                </div>
+            </div>
         </div>
 
         <footer>
@@ -324,6 +340,7 @@
 
             const payload = {
                 customer: document.getElementById('customer').value,
+                email: document.getElementById('email').value,
                 message: document.getElementById('message').value
             };
 
@@ -358,6 +375,15 @@
                 await showStep(4);
                 aiMessage.innerText = data.pipeline_results.ai_completion;
                 aiMessage.style.display = 'block';
+
+                // Step 5: Email
+                await showStep(5);
+                const emailDesc = document.getElementById('email-desc');
+                if (data.pipeline_results.email_sent) {
+                    emailDesc.innerText = "Confirmation email successfully simulated/sent!";
+                } else {
+                    emailDesc.innerText = "No email provided or sending failed.";
+                }
 
             } catch (error) {
                 console.error('Error:', error);

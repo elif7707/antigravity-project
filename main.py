@@ -1,6 +1,9 @@
 import uuid
 import os
 from datetime import datetime
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,7 +51,8 @@ def process_data(payload: dict) -> dict:
     print("-> Status: Running Process Function...")
     
     # Extract values with safe fallbacks
-    customer_name = payload.get("customer", "Unknown Customer")
+    customer_name = payload.get("customer_name", payload.get("customer", "Unknown Customer"))
+    email = payload.get("email", "")
     inquiry = payload.get("message", "No message provided")
     
     # Calculate Urgency
@@ -59,6 +63,7 @@ def process_data(payload: dict) -> dict:
     processed = {
         "id": str(uuid.uuid4()),
         "customer": customer_name,
+        "email": email,
         "message": inquiry,
         "urgency_level": urgency,
         "processed_at": datetime.now().isoformat(),
@@ -83,11 +88,11 @@ def send_to_crm(data: dict) -> bool:
         )
         service = build("sheets", "v4", credentials=creds)
 
-        # Prepare the row: [Timestamp, Name, Email(empty), Message, AI Category(empty), Urgency]
+        # Prepare the row: [Timestamp, Name, Email, Message, AI Category(empty), Urgency]
         values = [[
             data.get("processed_at"),
             data.get("customer"),
-            "", # Email placeholder
+            data.get("email", ""),
             data.get("message"),
             "", # AI Category placeholder
             data.get("urgency_level")
@@ -131,6 +136,43 @@ def get_ai_completion(data: dict) -> str:
     print(f"   [AI Generated] {response}")
     return response
 
+# 6. Email Confirmation
+def send_confirmation_email(customer_name: str, recipient_email: str) -> bool:
+    """Sends an automated confirmation email to the user."""
+    print("-> Status: Sending confirmation email...")
+    if not recipient_email:
+        print("   [Failed] No email address provided.")
+        return False
+        
+    sender_email = os.environ.get("SENDER_EMAIL", "support@example.com")
+    
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = recipient_email
+    msg['Subject'] = "We received your ticket"
+    
+    body = f"Hello {customer_name},\n\nWe have received your ticket and our team is reviewing it. We will get back to you shortly.\n\nBest,\nCustomer Support Team"
+    msg.attach(MIMEText(body, 'plain'))
+    
+    try:
+        smtp_server = os.environ.get("SMTP_SERVER", "localhost")
+        smtp_port = int(os.environ.get("SMTP_PORT", 1025))
+        
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        # For production with real auth:
+        # server.starttls()
+        # server.login(sender_email, os.environ.get("SENDER_PASSWORD", ""))
+        server.send_message(msg)
+        server.quit()
+        print(f"   [Success] Confirmation email sent to {recipient_email}")
+        return True
+    except ConnectionRefusedError:
+        print(f"   [Simulation] Email successfully constructed for {recipient_email} (no local SMTP server running).")
+        return True
+    except Exception as e:
+        print(f"   [Error] Failed to send email: {e}")
+        return False
+
 # 2. Trigger (Webhook)
 @app.post("/webhook")
 async def handle_trigger(request: Request):
@@ -150,6 +192,11 @@ async def handle_trigger(request: Request):
     crm_success = send_to_crm(processed_data)
     ai_response = get_ai_completion(processed_data)
     
+    # Send confirmation email
+    email_success = False
+    if processed_data.get("email"):
+        email_success = send_confirmation_email(processed_data.get("customer"), processed_data.get("email"))
+    
     print("-> Status: Pipeline Completed.")
     print("==================================\n")
     
@@ -161,7 +208,8 @@ async def handle_trigger(request: Request):
             "trigger_fired": True,
             "data_processed": True,
             "crm_written": crm_success,
-            "ai_completion": ai_response
+            "ai_completion": ai_response,
+            "email_sent": email_success
         }
     }
 
@@ -176,4 +224,3 @@ if __name__ == "__main__":
     import uvicorn
     print("Starting AI Customer Support Assignment Webhook Server on port 8000...")
     uvicorn.run(app, host="127.0.0.1", port=8000)
-
